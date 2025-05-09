@@ -4,10 +4,11 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const token = request.cookies.get('authToken')?.value;
 
-  // Allow requests to /login, /api/* (for login proxy and other api calls), and static assets
+  // Allow requests to /login, /api/* (for Next.js API routes), /api-proxy/* (for backend proxy), and static assets
   if (
     request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/api/') || // Allows API calls
+    request.nextUrl.pathname.startsWith('/api/') || // Allows Next.js API routes
+    request.nextUrl.pathname.startsWith('/api-proxy/') || // Allows proxied backend calls
     request.nextUrl.pathname.startsWith('/_next/static/') ||
     request.nextUrl.pathname.startsWith('/_next/image/') ||
     request.nextUrl.pathname.includes('.ico') || // Favicon and other icons

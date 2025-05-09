@@ -1,6 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone, FileWithPath } from 'react-dropzone';
-import { useExcelParse } from '@/hooks/use-excel-parse'; // Ajuste le chemin si nécessaire
+import { useExcelParse, ExcelData } from '@/hooks/use-excel-parse'; // Import ExcelData
 
 // Optionnel: Styles de base pour la dropzone
 const baseStyle: React.CSSProperties = {
@@ -33,41 +33,49 @@ const rejectStyle: React.CSSProperties = {
 };
 
 interface ExcelDropzoneProps {
-  onDataParsed?: (data: any[] | null) => void; // Callback pour passer les données parsées au parent
+  onDataParsed?: (data: ExcelData | null) => void; // Updated to use ExcelData
 }
 
 export const ExcelDropzone: React.FC<ExcelDropzoneProps> = ({ onDataParsed }) => {
   const { parsedData, isParsing, error, parseFile } = useExcelParse();
   const [acceptedFileName, setAcceptedFileName] = useState<string | null>(null);
+  const [internalError, setInternalError] = useState<string | null>(null); // For file read errors not from parsing
 
   const onDrop = useCallback(async (acceptedFiles: FileWithPath[]) => {
     if (acceptedFiles && acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
       setAcceptedFileName(file.name);
-      await parseFile(file);
-      if (onDataParsed) {
-        // Note: parseFile met à jour `parsedData` de manière asynchrone dans le hook.
-        // Pour obtenir les données les plus récentes, on pourrait envisager de retourner les données depuis parseFile
-        // ou d'utiliser un useEffect dans ce composant pour écouter les changements de `parsedData`.
-        // Pour l'instant, on passe la valeur actuelle de `parsedData` (qui pourrait être celle de l'appel précédent).
-        // Une meilleure approche serait d'attendre la mise à jour de `parsedData` dans le hook.
+      setInternalError(null); // Clear previous general errors
+      try {
+        await parseFile(file); // parseFile now returns a promise
+        // Data will be passed via useEffect listening to parsedData from the hook
+      } catch (e: any) {
+        // This catch is for errors during the parseFile promise itself (e.g., file read issues before parsing starts)
+        // Errors during the actual XLSX parsing are set in the hook's error state.
+        console.error("Error during parseFile invocation:", e);
+        setInternalError(e.message || 'Failed to initiate file parsing.');
+        if (onDataParsed) {
+          onDataParsed(null); // Notify parent of failure
+        }
       }
     }
   }, [parseFile, onDataParsed]);
 
-  // Pour passer les données parsées au composant parent dès qu'elles sont disponibles
-  React.useEffect(() => {
-    if (onDataParsed && parsedData) {
-      onDataParsed(parsedData);
+  useEffect(() => {
+    if (onDataParsed) {
+      if (error) {
+        console.log("EXCELDROPZONE: Hook reported a parsing error.");
+        onDataParsed(null); 
+      } else if (parsedData) {
+        console.log("EXCELDROPZONE: Hook has parsedData. Type:", typeof parsedData, "Is Array?", Array.isArray(parsedData), "Data:", parsedData);
+        onDataParsed(parsedData);
+      } else if (!isParsing && acceptedFileName && !error && !parsedData) {
+        // This case handles if a file was accepted, parsing finished, no error, but no data (e.g. empty file or cleared)
+        // console.log("ExcelDropzone: Notifying parent of no data after attempt.");
+        // onDataParsed(null); // Decide if this should also clear parent data
+      }
     }
-    // Si le parsing échoue ou est réinitialisé, on notifie aussi le parent
-    if (onDataParsed && (error || (!isParsing && !parsedData && acceptedFileName))) {
-        // Peut-être que l'on ne veut notifier que sur succès ou erreur explicite
-        // Pour l'instant, on notifie aussi si on a un nom de fichier mais plus de données
-        // ce qui peut arriver après un clear.
-        // onDataParsed(null); // A discuter si on veut clearer les données du parent ici.
-    }
-  }, [parsedData, onDataParsed, error, isParsing, acceptedFileName]);
+  }, [parsedData, error, onDataParsed, isParsing, acceptedFileName]);
 
   const {
     getRootProps,
@@ -95,6 +103,9 @@ export const ExcelDropzone: React.FC<ExcelDropzoneProps> = ({ onDataParsed }) =>
     isDragReject
   ]);
 
+  // Display hook error if present, otherwise internal error
+  const displayError = error ? error.message : internalError;
+
   return (
     <div className="container mx-auto p-4">
       <div {...getRootProps({ style })}>
@@ -102,21 +113,14 @@ export const ExcelDropzone: React.FC<ExcelDropzoneProps> = ({ onDataParsed }) =>
         <p>Glissez-déposez un fichier Excel ici, ou cliquez pour sélectionner un fichier</p>
         <em>(Fichiers .xls et .xlsx uniquement)</em>
       </div>
-      {acceptedFileName && !isParsing && !error && (
-        <p className="mt-2 text-green-600">Fichier accepté : {acceptedFileName}</p>
+      {acceptedFileName && !isParsing && !displayError && parsedData && (
+        <p className="mt-2 text-green-600">Fichier traité : {acceptedFileName}</p>
+      )}
+       {acceptedFileName && !isParsing && !displayError && !parsedData && (
+        <p className="mt-2 text-yellow-600">Fichier accepté : {acceptedFileName}, mais pas de données extraites ou parsing annulé.</p>
       )}
       {isParsing && <p className="mt-2 text-blue-600">Parsing en cours...</p>}
-      {error && <p className="mt-2 text-red-600">Erreur : {error.message}</p>}
-      {/* Optionnel: Afficher un aperçu ou un message de succès des données parsées */} 
-      {/* {parsedData && !isParsing && (
-        <div className="mt-2">
-          <h3 className="text-lg font-semibold">Données Parsées (aperçu) :</h3>
-          <pre className="bg-gray-100 p-2 rounded text-sm">
-            {JSON.stringify(parsedData.slice(0, 5), null, 2)} 
-          </pre>
-          <p>Total de lignes: {parsedData.length}</p>
-        </div>
-      )} */}
+      {displayError && <p className="mt-2 text-red-600">Erreur : {displayError}</p>}
     </div>
   );
 }; 

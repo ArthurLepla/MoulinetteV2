@@ -8,20 +8,30 @@ export const createApiClient = (token: string | null, apiUrl?: string | null): A
   // For now, all client-side API calls will use the proxy path.
   const effectiveApiUrl = '/api-proxy'; // Always use the proxy for client-side calls
 
-  const headers: { [key: string]: string } = {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  };
-
+  const headers: { [key: string]: string } = {};
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    try {
+      // Attempt to decode the token if it appears URL-encoded (e.g., contains %3D for == padding)
+      const decodedToken = token.includes('%') ? decodeURIComponent(token) : token;
+      headers['Authorization'] = `Bearer ${decodedToken}`;
+    } catch (e) {
+      console.warn('[CreateVariables] Token decoding failed, using raw token:', e);
+      headers['Authorization'] = `Bearer ${token}`; // Fallback to raw token if decoding fails
+    }
   }
+  // Rely on Axios default headers for 'Accept' on GET requests.
+  // 'Content-Type' is generally not needed or can be problematic for GET.
 
   const apiClient = axios.create({
     baseURL: effectiveApiUrl, // Use the proxy path as the base for client-side calls
-    headers: headers,
+    headers: headers, // Only Authorization header is conditionally added here
     timeout: 15000, // 15 seconds timeout for API calls
   });
+
+  // Remove Promise-like properties
+  delete (apiClient as any).then;
+  delete (apiClient as any).catch;
+  delete (apiClient as any).finally;
 
   // You can add interceptors here if needed, for example, to handle errors globally
   // or to refresh tokens (though token refresh is not part of the current scope).

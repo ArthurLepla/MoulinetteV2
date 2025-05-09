@@ -42,7 +42,10 @@ export default function LoginPage() {
         timeout: 10000, // 10 seconds timeout
       });
 
-      if (response.status === 200 && response.data.adapters) {
+      console.log("Proxy Response Status:", response.status); // Log status
+      console.log("Proxy Response Data:", response.data); // Log the actual data received
+
+      if (response.status === 200 && response.data && Array.isArray(response.data.adapters)) {
         console.log("Connection test successful. API URL and Token are valid.", response.data);
         login(authToken, apiUrl); // Call login from AuthContext with the user-provided apiUrl
         router.push('/'); // Redirect to the root page

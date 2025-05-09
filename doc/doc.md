@@ -1,4 +1,4 @@
-**Consultation des points de terminaison utiles**
+![1746776436247](image/doc/1746776436247.png)**Consultation des points de terminaison utiles**
 
 L'utilisateur veut une liste des 10 points de terminaison API les plus utiles, y compris pour récupérer des adaptateurs, des noms de connexion, des tags, créer des assets ou variables en masse, créer des agrégations, et mettre à jour la rétention des données. Je vais vérifier le fichier OpenAPI pour obtenir ces informations spécifiques. Je m'assurerai d'expliquer parfaitement ce que l'API attend pour chaque endpoint afin qu'ils fonctionnent correctement.
 
