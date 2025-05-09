@@ -1,11 +1,6 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, ReactNode } from 'react';
-import Image from "next/image";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ExcelDropzone } from "@/components/excel-dropzone";
-import { useExcelStore } from "@/store/excelStore";
-
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -20,7 +15,7 @@ interface Adapter {
   connectionName?: string;
 }
 
-const DashboardContent: React.FC = () => {
+export default function DashboardPage() {
   const { token, apiUrl, isAuthenticated, logout, isLoading: authIsLoading } = useAuth();
   const router = useRouter();
   const [adapters, setAdapters] = useState<Adapter[]>([]);
@@ -28,21 +23,13 @@ const DashboardContent: React.FC = () => {
   const [adaptersLoading, setAdaptersLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    if (authIsLoading) return;
-
-    if (!isAuthenticated) {
-      router.push('/login');
-      return;
-    }
-
-    if (token && apiUrl) {
+    if (isAuthenticated && token) {
       const apiClient = createApiClient(token, apiUrl);
       setAdaptersLoading(true);
       apiClient.get('/DataService/Adapters')
         .then(response => {
           if (response.data && Array.isArray(response.data.adapters)) {
             setAdapters(response.data.adapters);
-            setAdaptersError(null);
           } else {
             setAdapters([]);
             console.warn("Unexpected adapter data structure:", response.data);
@@ -53,8 +40,6 @@ const DashboardContent: React.FC = () => {
           console.error("Failed to fetch adapters:", err);
           if (err.response && err.response.status === 401) {
             setAdaptersError("Authentication error fetching adapters. Please re-login.");
-            logout();
-            router.push('/login');
           } else {
             setAdaptersError("Failed to load adapters. Check console for details.");
           }
@@ -62,10 +47,10 @@ const DashboardContent: React.FC = () => {
         .finally(() => {
           setAdaptersLoading(false);
         });
-    } else if (!authIsLoading && !token) {
+    } else if (!authIsLoading && !isAuthenticated) {
       router.push('/login');
     }
-  }, [isAuthenticated, token, apiUrl, router, authIsLoading, logout]);
+  }, [isAuthenticated, token, apiUrl, router, authIsLoading]);
 
   const handleLogout = () => {
     logout();
@@ -79,7 +64,11 @@ const DashboardContent: React.FC = () => {
       </div>
     );
   }
-  
+
+  if (!isAuthenticated && !authIsLoading) {
+    return null;
+  }
+
   return (
     <div className="container mx-auto p-4 pt-6 md:p-6 lg:p-8">
       <Card className="max-w-2xl mx-auto">
@@ -135,58 +124,4 @@ const DashboardContent: React.FC = () => {
       </Card>
     </div>
   );
-};
-
-export default function Home() {
-  const { setParsedData } = useExcelStore();
-  const { isAuthenticated, isLoading: authIsLoading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!authIsLoading && !isAuthenticated) {
-      router.push('/login');
-    }
-  }, [authIsLoading, isAuthenticated, router]);
-
-  const handleDataParsed = (data: { sheets: string[]; headers: string[]; rows: any[][]; activeSheet: string; }) => {
-    setParsedData(data);
-    console.log("Parsed data stored:", data);
-  };
-  
-  if (authIsLoading) {
-    return (
-        <div className="flex items-center justify-center min-h-screen">
-            <p>Loading application...</p>
-        </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return null; 
-  }
-
-  return (
-    <div className="container mx-auto p-4">
-      <Tabs defaultValue="dashboard" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="import">Import Excel</TabsTrigger>
-        </TabsList>
-        <TabsContent value="dashboard">
-          <DashboardContent />
-        </TabsContent>
-        <TabsContent value="import">
-          <div className="p-4">
-            <h2 className="text-xl font-semibold mb-4">Import Excel File</h2>
-            <ExcelDropzone onDataParsed={(data: any[] | null) => handleDataParsed({
-              sheets: [],
-              headers: [],
-              rows: data || [],
-              activeSheet: ''
-            })} />
-          </div>
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
+} 
