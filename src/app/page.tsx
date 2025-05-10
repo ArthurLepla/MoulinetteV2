@@ -23,6 +23,13 @@ import { UseMutationResult } from '@tanstack/react-query';
 import { CreateVariables } from '@/components/CreateVariables';
 import { useAssetStore } from '@/store/assetStore';
 import { Loader2 } from 'lucide-react';
+import { useMappingStore } from '@/store/mappingStore';
+import { AssetsBulk } from '@/components/AssetsBulk';
+import { VariablePreview } from '@/components/VariablePreview';
+import { VariableWizard } from '@/components/variable-wizard';
+import { useAssetCache } from '@/store/assetCache';
+import type { CachedAsset } from '@/store/assetCache';
+import { useAssetIdMap } from '@/store/assetIdMap';
 
 interface Adapter {
   id: string;
@@ -157,12 +164,13 @@ export default function HomePage() {
   const [adaptersError, setAdaptersError] = useState<string | null>(null);
   const [adaptersLoading, setAdaptersLoading] = useState<boolean>(true);
   const parsedExcelData = useExcelStore((state) => state.parsedData);
-  const setMappingConfigInStore = useExcelStore((state) => state.setMappingConfig);
-  const currentMappingConfig = useExcelStore((state) => state.mappingConfig);
-
+  const { mappingConfig, setMappingConfig } = useMappingStore();
   const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   const bulkCreateMutation: UseMutationResult<ProcessedBulkResponse, Error, MutationVariables> = useBulkAssets();
   const [totalAssetsToCreate, setTotalAssetsToCreate] = useState(0);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const assetTree = useAssetCache((s) => s.tree);
+  const setAssetTree = useAssetCache((s) => s.setTree);
 
   useEffect(() => {
     if (!authIsLoading && !isAuthenticated) {
@@ -222,17 +230,18 @@ export default function HomePage() {
 
   const handleSubmitMapping = (config: MappingConfig) => {
     console.log("PAGE.TSX: Submitted mapping config:", config);
-    setMappingConfigInStore(config);
+    setMappingConfig(config);
     setIsMappingModalOpen(false);
+    setWizardOpen(true);
   };
 
   const handlePushAssets = () => {
-    if (!parsedExcelData || !currentMappingConfig) {
+    if (!parsedExcelData || !mappingConfig) {
       toast.error("Missing Excel data or mapping configuration.");
       return;
     }
 
-    const assetLevels: AssetLevel[] = buildAssetLevels(parsedExcelData, currentMappingConfig);
+    const assetLevels: AssetLevel[] = buildAssetLevels(parsedExcelData, mappingConfig);
     
     let calculatedTotalAssets = 0;
     assetLevels.forEach(level => calculatedTotalAssets += level.nodes.length);
@@ -280,28 +289,59 @@ export default function HomePage() {
     toast.success(`Created ${response.successes.length} assets successfully.`, {
       description: `${response.failures.length} failures. Check console for details.`,
     });
-    
-    // Extract assets and map them to their anchor IDs
+    // Mapping externalId/fullPath -> assetId pour flux A
+    const { setIdMap } = useAssetIdMap.getState();
+    const idMap: Record<string, string> = {};
+    response.successes.forEach(success => {
+      if (success.externalId && success.assetId) {
+        idMap[success.externalId] = success.assetId;
+      }
+    });
+    setIdMap(idMap);
+    // Update asset store with created assets and mark as created
     const assets = response.successes.map(success => ({
       id: success.externalId || '',
       name: success.name,
       parentId: success.parentId !== '0' ? success.parentId : undefined,
       anchorId: success.assetId
     }));
-    
     const anchorMap: Record<string, string> = {};
-    
     response.successes.forEach(success => {
       if (success.externalId && success.assetId) {
         anchorMap[success.externalId] = success.assetId;
       }
     });
-    
-    // Update asset store with created assets and mark as created
     const { setAssets, setAnchorMap, setAssetsCreated } = useAssetStore.getState();
     setAssets(assets);
     setAnchorMap(anchorMap);
     setAssetsCreated(true);
+  };
+
+  // Retrieve assets from IIH (flux B)
+  async function retrieveAssets() {
+    if (!token || !apiUrl) return;
+    const api = createApiClient(token, apiUrl);
+    try {
+      // Correction : nouvelle route pour l'arbre d'assets
+      const res = await api.get('/AssetService/Assets/Tree');
+      const flat: CachedAsset[] = [];
+      const walk = (n: any, p: string[] = [], lvl: number = 0) => {
+        const path = [...p, n.name];
+        flat.push({ assetId: n.assetId, path: path.join('@'), level: lvl, name: n.name });
+        (n.children || []).forEach((c: any) => walk(c, path, lvl + 1));
+      };
+      walk(res.data); // racine unique
+      setAssetTree(flat);
+      toast.success(`Loaded ${flat.length} assets from IIH.`);
+    } catch (err) {
+      toast.error('Failed to load assets.');
+      console.error(err);
+    }
+  }
+
+  // Handler pour bulk send (à relier à l'API plus tard)
+  const handleBulkSend = () => {
+    toast.success('Variables envoyées dans l\'IIH (Bulk) !');
   };
 
   if (authIsLoading) {
@@ -343,13 +383,23 @@ export default function HomePage() {
                   </Button>
                   <Button 
                     onClick={handlePushAssets} 
-                    disabled={!currentMappingConfig || bulkCreateMutation.isPending}
+                    disabled={!mappingConfig || bulkCreateMutation.isPending}
                   >
                     {bulkCreateMutation.isPending ? 'Creating...' : 'Create Assets'}
                   </Button>
                 </div>
               </div>
               <PreviewTable data={parsedExcelData} />
+
+              {parsedExcelData && mappingConfig && (
+                <div className="mt-6 space-y-4 border-t pt-6">
+                  <h2 className="text-lg font-semibold">Define Variable Sets (Assets Tab View)</h2>
+                  <Button variant="outline" onClick={() => setWizardOpen(true)}>
+                    Open Variable Set Wizard
+                  </Button>
+                  <VariablePreview />
+                </div>
+              )}
             </>
           )}
           
@@ -421,8 +471,39 @@ export default function HomePage() {
         </TabsContent>
         
         <TabsContent value="variables" className="space-y-4">
-          {/* Variables Tab Content */}
-          <CreateVariables />
+          {((parsedExcelData && mappingConfig) || assetTree.length > 0) ? (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Define & Preview Variable Sets</h2>
+              <p className="text-sm text-muted-foreground">
+                Use the wizard to generate variable sets based on anchor templates and your asset hierarchy. 
+                The preview below will update as you add sets.
+              </p>
+              <Button
+                variant="secondary"
+                onClick={() => setWizardOpen(true)}
+              >
+                Add/Modify Variable Sets (Wizard)
+              </Button>
+              <VariablePreview />
+              <Button
+                className="w-full mt-6 h-14 text-lg"
+                variant="default"
+                onClick={handleBulkSend}
+              >
+                Valider et envoyer dans l&apos;IIH
+              </Button>
+            </div>
+          ) : (
+            <div className="p-4 space-y-4 text-center">
+              <p className="text-muted-foreground">
+                Aucune hiérarchie détectée.&nbsp;
+                <br/>Importe un Excel <b>ou</b> récupère les assets existants.
+              </p>
+              <Button onClick={retrieveAssets}>
+                Retrieve assets from IIH
+              </Button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -430,9 +511,14 @@ export default function HomePage() {
         isOpen={isMappingModalOpen}
         onClose={handleCloseMappingModal}
         onSubmit={handleSubmitMapping}
-        existingConfig={currentMappingConfig}
+        existingConfig={mappingConfig}
         excelData={parsedExcelData}
       />
+
+      {/* Affiche le wizard si on a soit Excel+mapping (flux A), soit assetTree (flux B) */}
+      {((parsedExcelData && mappingConfig) || assetTree.length > 0) && (
+        <VariableWizard open={wizardOpen} onClose={() => setWizardOpen(false)} />
+      )}
     </main>
   );
 }

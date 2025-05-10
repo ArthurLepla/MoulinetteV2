@@ -8,6 +8,7 @@ export interface ExcelData {
   headers: string[];
   rows: any[][];
   activeSheet: string;
+  fileName?: string;
 }
 
 interface ExcelState {
@@ -15,9 +16,11 @@ interface ExcelState {
   isLoading: boolean;
   error: string | null;
   mappingConfig: MappingConfig | null;
+  parsedExcelData: ExcelData | null;
   setParsedData: (data: ExcelData | null) => void;
   parseExcelFile: (file: File) => Promise<void>;
   setMappingConfig: (config: MappingConfig | null) => void;
+  setParsedExcelData: (data: ExcelData | null) => void;
 }
 
 export const useExcelStore = create<ExcelState>()(
@@ -26,6 +29,7 @@ export const useExcelStore = create<ExcelState>()(
     isLoading: false,
     error: null,
     mappingConfig: null,
+    parsedExcelData: null,
     setParsedData: (data) => {
       const oldData = get().parsedData;
       let shouldResetMapping = true;
@@ -83,5 +87,6 @@ export const useExcelStore = create<ExcelState>()(
     setMappingConfig: (config) => {
       set({ mappingConfig: config });
     },
+    setParsedExcelData: (data) => set({ parsedExcelData: data }),
   }))
 ); 
