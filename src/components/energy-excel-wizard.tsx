@@ -326,26 +326,57 @@ export function EnergyExcelWizard({
 
   // Fonction pour finaliser la prévisualisation
   const handlePreviewComplete = () => {
-    onVariablesPreview(previewVariables);
-    setStep('review');
-    toast.success('Prévisualisation des variables générée');
+    // Ajoutons un message et animation de chargement pendant la transition
+    toast.loading('Préparation des variables...', {
+      id: 'preview-transition'
+    });
+    
+    // Attendre un court instant pour que l'utilisateur perçoive l'action
+    setTimeout(() => {
+      // Passer à l'étape suivante
+      setStep('review');
+      
+      // Mise à jour du toast pour confirmer l'action
+      toast.success(`${previewVariables.length} variables ont été préparées. Cliquez sur "Terminer" pour confirmer.`, {
+        id: 'preview-transition',
+        duration: 4000
+      });
+    }, 500);
   };
 
   // Fonction pour valider et fermer
   const handleWizardComplete = () => {
+    // Notifier le parent composant avec les variables finales
     onVariablesPreview(previewVariables);
     setShowSuccessMessage(true);
+    
+    // Notification immédiate dans l'interface modale
+    toast.loading('Finalisation des variables...', {
+      id: 'wizard-complete'
+    });
+    
     // Fermer la fenêtre après un court délai pour que l'utilisateur puisse voir le message
     setTimeout(() => {
-      onClose();
-      toast.success(`${previewVariables.length} variables d'énergie ont été ajoutées. Consultez l'onglet "Variable Preview" pour les voir.`, {
-        duration: 6000, // Affichage plus long pour s'assurer que l'utilisateur voit le message
-        action: {
-          label: "Voir variables",
-          onClick: () => document.getElementById("variable-preview-tab")?.click()
-        }
+      // Mise à jour du toast avec message de succès
+      toast.success(`${previewVariables.length} variables d'énergie ont été ajoutées avec succès`, {
+        id: 'wizard-complete',
+        duration: 5000,
       });
-    }, 2000); // Augmenté à 2 secondes pour donner plus de temps à l'utilisateur pour voir le message
+      
+      // Fermer le modal
+      setTimeout(() => {
+        onClose();
+        
+        // Notification finale avec action pour voir les variables
+        toast.success(`${previewVariables.length} variables d'énergie sont maintenant disponibles dans l'onglet "Variables"`, {
+          duration: 8000,
+          action: {
+            label: "Voir variables",
+            onClick: () => document.getElementById("variable-preview-tab")?.click()
+          }
+        });
+      }, 1000);
+    }, 1000);
   };
 
   // Fonction pour ajouter un niveau supplémentaire
