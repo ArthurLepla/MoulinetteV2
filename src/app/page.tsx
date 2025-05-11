@@ -366,7 +366,7 @@ export default function HomePage() {
       <Tabs defaultValue="assets" className="mt-6">
         <TabsList>
           <TabsTrigger value="assets">Assets</TabsTrigger>
-          <TabsTrigger value="variables">Variables</TabsTrigger>
+          <TabsTrigger value="variables" id="variable-preview-tab">Variables</TabsTrigger>
         </TabsList>
         
         <TabsContent value="assets" className="space-y-4">

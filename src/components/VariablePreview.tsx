@@ -17,7 +17,7 @@ import {
   Cell,
   Column,
 } from '@tanstack/react-table';
-import { ArrowUpDown, ChevronDown, Filter, Pencil, Trash2 } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, Filter, Pencil, Trash2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -38,9 +38,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useVariableStore, Variable } from '@/store/variableStore';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // Interface de l'adaptateur
 interface Adapter {
@@ -62,6 +63,12 @@ export function VariablePreview() {
   const [editVar, setEditVar] = useState<Variable | null>(null);
   const [editVarDraft, setEditVarDraft] = useState<Variable | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  
+  // État pour la modale de confirmation de suppression en masse
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  
+  // État pour la modale de confirmation de suppression totale
+  const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
   
   // État pour stocker la liste des adaptateurs
   const [adaptersList, setAdaptersList] = useState<Adapter[]>([]);
@@ -112,8 +119,68 @@ export function VariablePreview() {
     toast.success('Variable supprimée');
   };
 
+  // Handler pour supprimer les variables sélectionnées
+  const handleBulkDelete = () => {
+    const selectedRows = table.getSelectedRowModel().rows;
+    if (selectedRows.length === 0) return;
+    
+    setDeleteConfirmOpen(true);
+  };
+  
+  // Handler pour supprimer toutes les variables
+  const handleDeleteAll = () => {
+    if (previewVariables.length === 0) return;
+    
+    setDeleteAllConfirmOpen(true);
+  };
+  
+  // Exécuter la suppression en masse après confirmation
+  const confirmBulkDelete = () => {
+    const selectedRows = table.getSelectedRowModel().rows;
+    const selectedVariables = selectedRows.map(row => row.original);
+    const remainingVariables = previewVariables.filter(v => !selectedVariables.includes(v));
+    
+    setPreviewVariables(remainingVariables);
+    setRowSelection({});
+    setDeleteConfirmOpen(false);
+    
+    toast.success(`${selectedVariables.length} variables supprimées`);
+  };
+  
+  // Exécuter la suppression de toutes les variables après confirmation
+  const confirmDeleteAll = () => {
+    const count = previewVariables.length;
+    setPreviewVariables([]);
+    setRowSelection({});
+    setDeleteAllConfirmOpen(false);
+    
+    toast.success(`Toutes les variables ont été supprimées (${count} au total)`);
+  };
+
   // Ajouter des actions sur les colonnes
   const columns: ColumnDef<Variable>[] = [
+    {
+      id: 'select',
+      header: ({ table }) => (
+        <Checkbox
+          checked={
+            table.getIsAllPageRowsSelected() ||
+            (table.getIsSomePageRowsSelected() && "indeterminate")
+          }
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          aria-label="Select row"
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+    },
     {
       accessorKey: 'name',
       header: ({ column }: { column: Column<Variable> }) => {
@@ -271,10 +338,14 @@ export function VariablePreview() {
       columnVisibility,
       rowSelection,
     },
+    enableRowSelection: true,
   });
 
   // Filter options for data types
   const dataTypes = ['Double', 'Boolean', 'String', 'Integer'];
+  
+  // Nombre de variables sélectionnées
+  const selectedCount = Object.keys(rowSelection).length;
 
   return (
     <>
@@ -283,78 +354,104 @@ export function VariablePreview() {
           <CardTitle>Variable Preview</CardTitle>
           <CardDescription>
             {totalCount} variables will be created based on energy mappings
+            {selectedCount > 0 && ` • ${selectedCount} variables sélectionnées`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center py-4 gap-2">
-            <Input
-              placeholder="Filter variable names..."
-              value={(table.getColumn('name')?.getFilterValue() as string) ?? ''}
-              onChange={(event) =>
-                table.getColumn('name')?.setFilterValue(event.target.value)
-              }
-              className="max-w-sm"
-            />
+          <div className="flex items-center py-4 gap-2 flex-wrap justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Input
+                placeholder="Filter variable names..."
+                value={(table.getColumn('name')?.getFilterValue() as string) ?? ''}
+                onChange={(event) =>
+                  table.getColumn('name')?.setFilterValue(event.target.value)
+                }
+                className="max-w-sm"
+              />
+              
+              <DropdownMenu open={dataTypeOpen} onOpenChange={setDataTypeOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Data Type
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {dataTypes.map((type) => (
+                    <DropdownMenuCheckboxItem
+                      key={type}
+                      checked={(table.getColumn('dataType')?.getFilterValue() as string[])?.includes(type)}
+                      onCheckedChange={(value) => {
+                        const filterValues = (table.getColumn('dataType')?.getFilterValue() as string[]) || [];
+                        if (value) {
+                          table.getColumn('dataType')?.setFilterValue([...filterValues, type]);
+                        } else {
+                          table.getColumn('dataType')?.setFilterValue(
+                            filterValues.filter((val) => val !== type)
+                          );
+                        }
+                        setDataTypeOpen(false);
+                      }}
+                    >
+                      {type}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              
+              <DropdownMenu open={columnsOpen} onOpenChange={setColumnsOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    Columns
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {table
+                    .getAllColumns()
+                    .filter((column: Column<Variable>) => column.getCanHide())
+                    .map((column: Column<Variable>) => {
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          className="capitalize"
+                          checked={column.getIsVisible()}
+                          onCheckedChange={(value) => {
+                            column.toggleVisibility(!!value);
+                            setColumnsOpen(false);
+                          }}
+                        >
+                          {column.id}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             
-            <DropdownMenu open={dataTypeOpen} onOpenChange={setDataTypeOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="ml-auto">
-                  <Filter className="mr-2 h-4 w-4" />
-                  Data Type
-                  <ChevronDown className="ml-2 h-4 w-4" />
+            <div className="flex items-center gap-2">
+              {selectedCount > 0 && (
+                <Button 
+                  variant="destructive" 
+                  onClick={handleBulkDelete}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Supprimer sélection ({selectedCount})
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {dataTypes.map((type) => (
-                  <DropdownMenuCheckboxItem
-                    key={type}
-                    checked={(table.getColumn('dataType')?.getFilterValue() as string[])?.includes(type)}
-                    onCheckedChange={(value) => {
-                      const filterValues = (table.getColumn('dataType')?.getFilterValue() as string[]) || [];
-                      if (value) {
-                        table.getColumn('dataType')?.setFilterValue([...filterValues, type]);
-                      } else {
-                        table.getColumn('dataType')?.setFilterValue(
-                          filterValues.filter((val) => val !== type)
-                        );
-                      }
-                      setDataTypeOpen(false);
-                    }}
-                  >
-                    {type}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            
-            <DropdownMenu open={columnsOpen} onOpenChange={setColumnsOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  Columns
-                  <ChevronDown className="ml-2 h-4 w-4" />
+              )}
+              
+              {previewVariables.length > 0 && (
+                <Button 
+                  variant="outline" 
+                  onClick={handleDeleteAll}
+                  className="border-destructive text-destructive hover:bg-destructive/10"
+                >
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  Tout supprimer ({previewVariables.length})
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {table
-                  .getAllColumns()
-                  .filter((column: Column<Variable>) => column.getCanHide())
-                  .map((column: Column<Variable>) => {
-                    return (
-                      <DropdownMenuCheckboxItem
-                        key={column.id}
-                        className="capitalize"
-                        checked={column.getIsVisible()}
-                        onCheckedChange={(value) => {
-                          column.toggleVisibility(!!value);
-                          setColumnsOpen(false);
-                        }}
-                      >
-                        {column.id}
-                      </DropdownMenuCheckboxItem>
-                    );
-                  })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              )}
+            </div>
           </div>
           <div className="rounded-md border">
             <Table>
@@ -400,27 +497,30 @@ export function VariablePreview() {
               </TableBody>
             </Table>
           </div>
-          <div className="flex items-center justify-end space-x-2 py-4">
+          <div className="flex items-center justify-between space-x-2 py-4">
             <div className="text-sm text-muted-foreground">
+              {previewVariables.length} variables au total • 
               Page {table.getState().pagination.pageIndex + 1} of{' '}
               {table.getPageCount()}
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              Next
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -475,6 +575,51 @@ export function VariablePreview() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveEdit}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Modale de confirmation de suppression en masse */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmer la suppression</DialogTitle>
+            <DialogDescription>
+              Vous êtes sur le point de supprimer {selectedCount} variables. Cette action ne peut pas être annulée.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center p-3 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400">
+            <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+            <span className="text-sm">Les variables supprimées ne pourront pas être récupérées.</span>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>Annuler</Button>
+            <Button variant="destructive" onClick={confirmBulkDelete}>Supprimer {selectedCount} variables</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Modale de confirmation de suppression totale */}
+      <Dialog open={deleteAllConfirmOpen} onOpenChange={setDeleteAllConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Supprimer TOUTES les variables</DialogTitle>
+            <DialogDescription>
+              Vous êtes sur le point de supprimer TOUTES les variables ({previewVariables.length} au total). Cette action est irréversible.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center p-4 bg-red-50 dark:bg-red-950/30 rounded-md border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400">
+            <AlertTriangle className="h-6 w-6 mr-3 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Attention !</p>
+              <p className="text-sm mt-1">Toutes les variables seront supprimées, y compris celles qui ne sont pas affichées sur la page actuelle.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteAllConfirmOpen(false)}>Annuler</Button>
+            <Button variant="destructive" onClick={confirmDeleteAll}>
+              Confirmer la suppression de toutes les variables
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
