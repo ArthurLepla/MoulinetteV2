@@ -35,17 +35,17 @@ export default function LoginPage() {
     const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
 
     try {
-      // Create a proxy client to test the connection
-      const proxyClient = axios.create({
-        baseURL: '/api-proxy',
+      // Crée un client axios direct vers l'API Base URL saisie
+      const apiClient = axios.create({
+        baseURL: baseUrl, // Utilise la valeur saisie par l'utilisateur
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Accept': 'application/json'
         }
       });
       
-      // Test connection via the proxy
-      const response = await proxyClient.get('/DataService/Adapters');
+      // Teste la connexion directement sur l'API cible
+      const response = await apiClient.get('/DataService/Adapters');
 
       console.log("Proxy Response Status:", response.status);
       console.log("Proxy Response Data:", response.data);
