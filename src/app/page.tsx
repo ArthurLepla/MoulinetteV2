@@ -30,7 +30,11 @@ import { VariableWizard } from '@/components/variable-wizard';
 import { useAssetCache } from '@/store/assetCache';
 import type { CachedAsset } from '@/store/assetCache';
 import { useAssetIdMap } from '@/store/assetIdMap';
-import { useVariableStore } from '@/store/variableStore';
+import { useVariableStore, Variable } from '@/store/variableStore';
+import { AggregationModal } from '@/components/AggregationModal';
+import { BulkAggregationModal } from '@/components/BulkAggregationModal';
+import { useAggregationStore, Aggregation } from '@/store/aggregationStore';
+import { useFetchAssets } from '@/hooks/useFetchAssets';
 
 interface Adapter {
   id: string;
@@ -172,6 +176,15 @@ export default function HomePage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const assetTree = useAssetCache((s) => s.tree);
   const setAssetTree = useAssetCache((s) => s.setTree);
+  
+  // Ajout du hook pour l'utiliser dans la fonction retrieveAssetsAndVariables
+  const { fetchAssets } = useFetchAssets({ showToasts: false });
+  
+  // Déplacer tous les états et hooks de l'onglet aggregation au niveau supérieur
+  const { aggregations, removeAggregation } = useAggregationStore();
+  const [aggregationModalOpen, setAggregationModalOpen] = useState(false);
+  const [bulkAggregationModalOpen, setBulkAggregationModalOpen] = useState(false);
+  const [currentAggregation, setCurrentAggregation] = useState<Aggregation | null>(null);
 
   useEffect(() => {
     if (!authIsLoading && !isAuthenticated) {
@@ -366,48 +379,32 @@ export default function HomePage() {
     console.log('Exemples de clés dans anchorMap:', Object.keys(anchorMap).slice(0, 5));
   };
 
-  // Retrieve assets from IIH (flux B)
-  async function retrieveAssets() {
+  // Retrieve only assets and variables from IIH - no aggregations
+  async function retrieveAssetsAndVariables() {
     if (!token || !apiUrl) return;
-    const api = createApiClient(token, apiUrl);
+    
+    toast.loading("Récupération des assets et variables...", { id: "fetch-assets-variables" });
+    
     try {
-      // Correction : nouvelle route pour l'arbre d'assets
-      const res = await api.get('/AssetService/Assets/Tree');
-      const flat: CachedAsset[] = [];
-      // Créer un anchorMap pour le flux B
-      const newAnchorMap: Record<string, string> = {};
+      // Utiliser la référence au hook déclarée au niveau du composant
+      await fetchAssets();
       
-      const walk = (n: any, p: string[] = [], lvl: number = 0) => {
-        const path = [...p, n.name];
-        const fullPath = path.join('@');
-        
-        // Ajouter au tableau plat pour assetCache
-        flat.push({ assetId: n.assetId, path: fullPath, level: lvl, name: n.name });
-        
-        // Ajouter au anchorMap la correspondance path → assetId
-        if (n.assetId) {
-          newAnchorMap[fullPath] = n.assetId;
+      toast.success(
+        "Données récupérées avec succès", 
+        { 
+          id: "fetch-assets-variables",
+          description: "Assets et variables chargés à partir de l'API"
         }
-        
-        (n.children || []).forEach((c: any) => walk(c, path, lvl + 1));
-      };
-      
-      walk(res.data); // racine unique
-      
-      // Mettre à jour les stores
-      setAssetTree(flat);
-      
-      // Mettre à jour l'anchorMap dans le store des assets
-      const { setAnchorMap } = useAssetStore.getState();
-      setAnchorMap(newAnchorMap);
-      
-      console.log('AnchorMap créé avec', Object.keys(newAnchorMap).length, 'entrées');
-      console.log('Exemple de chemins:', Object.keys(newAnchorMap).slice(0, 3));
-      
-      toast.success(`Loaded ${flat.length} assets from IIH.`);
+      );
     } catch (err) {
-      toast.error('Failed to load assets.');
-      console.error(err);
+      console.error('Erreur lors de la récupération des données:', err);
+      toast.error(
+        "Échec de la récupération des données", 
+        { 
+          id: "fetch-assets-variables", 
+          description: err instanceof Error ? err.message : "Erreur inconnue"
+        }
+      );
     }
   }
 
@@ -688,6 +685,40 @@ export default function HomePage() {
     }
   };
 
+  // Fonction pour gérer l'ajout d'une agrégation
+  const handleAddAggregation = () => {
+    setCurrentAggregation(null);
+    setAggregationModalOpen(true);
+  };
+  
+  // Fonction pour gérer l'ajout en masse d'agrégations
+  const handleBulkAddAggregation = () => {
+    setBulkAggregationModalOpen(true);
+  };
+  
+  // Fonction pour gérer l'édition d'une agrégation
+  const handleEditAggregation = (aggregation: Aggregation) => {
+    setCurrentAggregation(aggregation);
+    setAggregationModalOpen(true);
+  };
+  
+  // Fonction pour gérer la suppression d'une agrégation
+  const handleDeleteAggregation = async (id: string) => {
+    if (confirm("Êtes-vous sûr de vouloir supprimer cette agrégation ?")) {
+      try {
+        if (token && apiUrl) {
+          const apiClient = createApiClient(token, apiUrl);
+          await apiClient.delete(`/DataService/anchor-ex/v1/aggregations/${id}`);
+        }
+        removeAggregation(id);
+        toast.success("Agrégation supprimée avec succès");
+      } catch (error) {
+        console.error("Erreur lors de la suppression de l'agrégation:", error);
+        toast.error("Erreur lors de la suppression de l'agrégation");
+      }
+    }
+  };
+
   if (authIsLoading) {
     return (
         <div className="flex items-center justify-center min-h-screen">
@@ -711,6 +742,7 @@ export default function HomePage() {
         <TabsList>
           <TabsTrigger value="assets">Assets</TabsTrigger>
           <TabsTrigger value="variables" id="variable-preview-tab">Variables</TabsTrigger>
+          <TabsTrigger value="aggregation">Aggregation</TabsTrigger>
         </TabsList>
         
         <TabsContent value="assets" className="space-y-4">
@@ -817,16 +849,16 @@ export default function HomePage() {
         <TabsContent value="variables" className="space-y-4">
           {((parsedExcelData && mappingConfig) || assetTree.length > 0) ? (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold">Define & Preview Variable Sets</h2>
+              <h2 className="text-xl font-semibold">Définir & Prévisualiser vos Variables</h2>
               <p className="text-sm text-muted-foreground">
-                Use the wizard to generate variable sets based on anchor templates and your asset hierarchy. 
-                The preview below will update as you add sets.
+                Utilisez l'assistant pour générer des variables basées sur des modèles et votre hiérarchie d'assets.
+                L'aperçu ci-dessous sera mis à jour au fur et à mesure que vous ajoutez des ensembles.
               </p>
               <Button
                 variant="secondary"
                 onClick={() => setWizardOpen(true)}
               >
-                Add/Modify Variable Sets (Wizard)
+                Ajouter/Modifier des Variables (Assistant)
               </Button>
               <VariablePreview />
               <Button
@@ -840,14 +872,133 @@ export default function HomePage() {
           ) : (
             <div className="p-4 space-y-4 text-center">
               <p className="text-muted-foreground">
-                Aucune hiérarchie détectée.&nbsp;
-                <br/>Importe un Excel <b>ou</b> récupère les assets existants.
+                Aucune hiérarchie détectée.
+                <br/>Importez un Excel <b>ou</b> récupérez les assets et variables existants.
               </p>
-              <Button onClick={retrieveAssets}>
-                Retrieve assets from IIH
+              <Button onClick={retrieveAssetsAndVariables}>
+                Récupérer assets & variables
               </Button>
             </div>
           )}
+        </TabsContent>
+        
+        <TabsContent value="aggregation" className="space-y-4">
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Configuration des Agrégations de Variables</h2>
+            <p className="text-sm text-muted-foreground">
+              Créez des agrégations pour traiter et consolider les données de vos variables.
+            </p>
+            
+            {((parsedExcelData && mappingConfig) || assetTree.length > 0) ? (
+              <div className="border rounded-md p-4 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-medium">Créer une nouvelle agrégation</h3>
+                  <div className="flex space-x-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleBulkAddAggregation}
+                    >
+                      Création en masse
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleAddAggregation}
+                    >
+                      Ajouter une agrégation
+                    </Button>
+                  </div>
+                </div>
+                
+                {aggregations.length === 0 ? (
+                  <div className="bg-muted/50 p-4 rounded-md">
+                    <p className="text-center text-muted-foreground">
+                      Aucune agrégation n'est configurée. Cliquez sur "Ajouter une agrégation" pour en créer une nouvelle.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="rounded-md border">
+                      <table className="min-w-full divide-y divide-border">
+                        <thead>
+                          <tr className="bg-muted/50">
+                            <th className="px-4 py-3 text-left text-sm font-medium">Nom</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium">Variable source</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium">Méthode</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium">Période</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium">Statut</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border bg-background">
+                          {aggregations.map((aggregation) => (
+                            <tr key={aggregation.id}>
+                              <td className="px-4 py-3 text-sm">{aggregation.name}</td>
+                              <td className="px-4 py-3 text-sm">{aggregation.sourceVariableName}</td>
+                              <td className="px-4 py-3 text-sm">{aggregation.method}</td>
+                              <td className="px-4 py-3 text-sm">{aggregation.timeframe}</td>
+                              <td className="px-4 py-3 text-sm">
+                                <span className={`inline-block px-2 py-1 rounded-full text-xs ${
+                                  aggregation.status === 'active' 
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                                    : aggregation.status === 'error'
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                }`}>
+                                  {aggregation.status || 'pending'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={() => handleEditAggregation(aggregation)}
+                                  >
+                                    Éditer
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    className="text-red-500 hover:text-red-700"
+                                    onClick={() => aggregation.id && handleDeleteAggregation(aggregation.id)}
+                                  >
+                                    Supprimer
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-4 space-y-4 text-center">
+                <p className="text-muted-foreground">
+                  Aucun asset ou variable détecté.
+                  <br/>Importez des données Excel ou récupérez les assets et variables existants.
+                </p>
+                <Button onClick={retrieveAssetsAndVariables}>
+                  Récupérer assets & variables
+                </Button>
+              </div>
+            )}
+            
+            <AggregationModal 
+              open={aggregationModalOpen}
+              onClose={() => setAggregationModalOpen(false)}
+              aggregationToEdit={currentAggregation}
+            />
+            
+            <BulkAggregationModal
+              open={bulkAggregationModalOpen}
+              onClose={() => setBulkAggregationModalOpen(false)}
+            />
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -859,7 +1010,6 @@ export default function HomePage() {
         excelData={parsedExcelData}
       />
 
-      {/* Affiche le wizard si on a soit Excel+mapping (flux A), soit assetTree (flux B) */}
       {((parsedExcelData && mappingConfig) || assetTree.length > 0) && (
         <VariableWizard open={wizardOpen} onClose={() => setWizardOpen(false)} />
       )}

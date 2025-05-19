@@ -11,18 +11,20 @@ export interface Variable {
   level: number;            // 0-N for preview grouping
   assetId?: string;        // Ajouté pour le POST bulk variables
   adapterId?: string;      // ID de l'adaptateur associé à la variable
+  id?: string;             // ID unique pour les variables récupérées de l'IIH
   // Removed totalCount from here as it seems to be a derived value or handled elsewhere
 }
 
 interface VariableState {
   // Variables data
   variables: Variable[];
-  previewVariables: Variable[]; // For preview before creation
+  previewVariables: Variable[]; // For preview before creation and imported from IIH
   
   // Status flags
   varsReady: boolean;
   variablesCreated: boolean;
   isCreatingVariables: boolean;
+  isLoading: boolean; // Added for fetch state
   
   // Processing status
   progress: number; // 0-100 percentage for bulk operations
@@ -42,6 +44,7 @@ interface VariableState {
   setProcessedCount: (count: number) => void;
   setTotalCount: (count: number) => void;
   setError: (error: string | null) => void;
+  setLoading: (isLoading: boolean) => void; // Added for fetch state
   resetVariableStore: () => void;
   templates:       AnchorTemplate[];   // ← fetched once
   setTemplates: (t: AnchorTemplate[]) => void;
@@ -62,6 +65,7 @@ export const useVariableStore = create<VariableState>()(
     varsReady: false,
     variablesCreated: false,
     isCreatingVariables: false,
+    isLoading: false,
     progress: 0,
     processedCount: 0,
     totalCount: 0,
@@ -102,12 +106,15 @@ export const useVariableStore = create<VariableState>()(
     
     setError: (error) => set({ error }),
     
+    setLoading: (isLoading) => set({ isLoading }),
+    
     resetVariableStore: () => set({
       variables: [],
       previewVariables: [],
       varsReady: false,
       variablesCreated: false,
       isCreatingVariables: false,
+      isLoading: false,
       progress: 0,
       processedCount: 0,
       totalCount: 0,

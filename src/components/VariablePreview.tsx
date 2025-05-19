@@ -42,6 +42,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useFetchAssets } from '@/hooks/useFetchAssets';
 
 // Interface de l'adaptateur
 interface Adapter {
@@ -51,6 +52,9 @@ interface Adapter {
 
 export function VariablePreview() {
   const { previewVariables, totalCount, setPreviewVariables } = useVariableStore();
+  
+  // Add the useFetchAssets hook
+  const { isLoading: isLoadingAssets, error: assetsError, fetchAssets } = useFetchAssets();
   
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -73,6 +77,11 @@ export function VariablePreview() {
   // État pour stocker la liste des adaptateurs
   const [adaptersList, setAdaptersList] = useState<Adapter[]>([]);
   const [isLoadingAdapters, setIsLoadingAdapters] = useState(false);
+  
+  // Fetch assets and variables on mount
+  useEffect(() => {
+    fetchAssets();
+  }, [fetchAssets]);
   
   // Charger la liste des adaptateurs au chargement du composant
   useEffect(() => {

@@ -15,7 +15,6 @@ import { Label } from "@/components/ui/label";
 import axios from "axios"; // Added axios import
 import { useAuth } from "@/context/AuthContext"; // Import useAuth
 import { useRouter } from 'next/navigation'; // Import useRouter for redirection
-// import { useAuth } from "@/context/AuthContext"; // We'll create this later
 
 export default function LoginPage() {
   const [apiUrl, setApiUrl] = useState(process.env.NEXT_PUBLIC_IIH_BASE_URL || ""); // Initialize with env var if available
@@ -24,30 +23,42 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth(); // Get login function from context
   const router = useRouter(); // Initialize router
-  // const { login } = useAuth(); // We'll use this from AuthContext
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
-    console.log("Attempting to connect via proxy with token:", authToken);
+    console.log("Attempting to connect with token:", authToken);
+    
+    // Make sure apiUrl doesn't end with a slash
+    const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
 
     try {
-      const response = await axios.get(`/api-proxy/DataService/Adapters`, {
+      // Create a proxy client to test the connection
+      const proxyClient = axios.create({
+        baseURL: '/api-proxy',
         headers: {
-          Authorization: `Bearer ${authToken}`,
-          Accept: "application/json",
-        },
-        timeout: 10000, // 10 seconds timeout
+          'Authorization': `Bearer ${authToken}`,
+          'Accept': 'application/json'
+        }
       });
+      
+      // Test connection via the proxy
+      const response = await proxyClient.get('/DataService/Adapters');
 
-      console.log("Proxy Response Status:", response.status); // Log status
-      console.log("Proxy Response Data:", response.data); // Log the actual data received
+      console.log("Proxy Response Status:", response.status);
+      console.log("Proxy Response Data:", response.data);
 
       if (response.status === 200 && response.data && Array.isArray(response.data.adapters)) {
         console.log("Connection test successful. API URL and Token are valid.", response.data);
-        login(authToken, apiUrl); // Call login from AuthContext with the user-provided apiUrl
+        
+        // Configuration réussie - stocker les informations
+        localStorage.setItem('apiBaseUrl', baseUrl);
+        
+        // Utiliser le contexte pour la connexion
+        login(authToken, baseUrl);
+        
         router.push('/'); // Redirect to the root page
       } else {
         // Should not happen if status is 200, but as a safeguard

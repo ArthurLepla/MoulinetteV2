@@ -1,8 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
 
 // This function creates an Axios instance specifically for the Anchor API endpoints
-export const createAnchorClient = (token: string | null): AxiosInstance => {
-  const baseURL = '/api-proxy'; // Use the same proxy as in apiClient
+export const createAnchorClient = (token: string | null, apiUrl?: string | null): AxiosInstance => {
+  const baseURL = apiUrl || '/api-proxy'; // Use apiUrl from context or fall back to proxy
   const anchorPath = '/DataService/anchor/v1'; // Base path for Anchor API
 
   const headers: { [key: string]: string } = {
@@ -54,5 +54,17 @@ export const anchorService = {
   
   updateRetention: (client: AxiosInstance, retentionId: string, retentionData: any) => {
     return client.put(`/anchor-ex/v1/retentions/${retentionId}`, retentionData);
+  },
+
+  // Asset listing
+  getAssets: (client: AxiosInstance) => {
+    return client.get('/assets');
+  },
+  
+  // Get asset details
+  getAsset: (client: AxiosInstance, assetId: string, selectors?: string) => {
+    return client.get(`/assets/${assetId}`, {
+      params: selectors ? { selectors: '$name' } : undefined
+    });
   }
 }; 

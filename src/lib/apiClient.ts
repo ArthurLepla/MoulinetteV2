@@ -1,12 +1,11 @@
 import axios, { AxiosInstance } from 'axios';
 
-// This function creates an Axios instance with dynamic baseURL (from proxy) and auth token.
+// This function creates an Axios instance with dynamic baseURL (from context) and auth token.
 // It's intended to be called from within components/hooks where apiUrl and token are available from AuthContext.
 export const createApiClient = (token: string | null, apiUrl?: string | null): AxiosInstance => {
-  // For client-side requests that go through the Next.js proxy, the baseURL relative to the Next.js app.
-  // For direct server-to-server calls (not applicable here yet), you might use the full apiUrl.
-  // For now, all client-side API calls will use the proxy path.
-  const effectiveApiUrl = '/api-proxy'; // Always use the proxy for client-side calls
+  // For client-side requests, use the full API URL from the context
+  // Fall back to proxy path if no API URL is provided
+  const effectiveApiUrl = apiUrl || '/api-proxy';
 
   const headers: { [key: string]: string } = {};
   if (token) {
@@ -23,7 +22,7 @@ export const createApiClient = (token: string | null, apiUrl?: string | null): A
   // 'Content-Type' is generally not needed or can be problematic for GET.
 
   const apiClient = axios.create({
-    baseURL: effectiveApiUrl, // Use the proxy path as the base for client-side calls
+    baseURL: effectiveApiUrl, // Use the API URL from context or fall back to proxy
     headers: headers, // Only Authorization header is conditionally added here
     timeout: 15000, // 15 seconds timeout for API calls
   });
